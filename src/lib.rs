@@ -11,16 +11,29 @@ use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows_sys::Win32::System::Diagnostics::Debug::{
     SetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX
 };
-use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
-use windows_sys::Win32::System::Memory::SetProcessWorkingSetSizeEx;
-
+fn get_dll_dir() -> std::path::PathBuf {
+    use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
+    let mut buffer = [0u16; 32768];
+    unsafe {
+        let len = GetModuleFileNameW(0, buffer.as_mut_ptr(), buffer.len() as u32);
+        if len == 0 {
+            return std::path::PathBuf::new();
+        }
+        let s = String::from_utf16_lossy(&buffer[..len as usize]);
+        let mut path = std::path::PathBuf::from(s);
+        path.pop();
+        path
+    }
+}
 
 // Simple logging system / Простая система логирования
 fn log(msg: &str) {
+    let mut path = get_dll_dir();
+    path.push("er_performance_tweaks_log.log");
     if let Ok(mut f) = OpenOptions::new()
         .append(true)
         .create(true)
-        .open("er_performance_tweaks.log") 
+        .open(path) 
     {
         let _ = writeln!(f, "[ER Performance] {}", msg);
     }
@@ -78,7 +91,10 @@ impl Default for Config {
 
 fn load_config() -> Config {
     let mut config = Config::default();
-    if let Ok(content) = std::fs::read_to_string("er_performance_tweaks_config.ini") {
+    let mut path = get_dll_dir();
+    path.push("er_performance_tweaks_config.ini");
+    
+    if let Ok(content) = std::fs::read_to_string(path) {
         for line in content.lines() {
             let line = line.split(';').next().unwrap_or("").trim();
             if line.is_empty() || !line.contains('=') { continue; }
@@ -307,7 +323,9 @@ pub unsafe extern "system" fn DllMain(instance: HINSTANCE, call_reason: u32, _: 
         DLL_PROCESS_ATTACH => {
             let _ = DisableThreadLibraryCalls(instance);
             // Truncate log file on start / Перезапись лога при запуске
-            let _ = std::fs::write("er_performance_tweaks.log", "=== Elden Ring Performance Tweaks v1.0 Initialized ===\n");
+            let mut path = get_dll_dir();
+            path.push("er_performance_tweaks_log.log");
+            let _ = std::fs::write(path, "=== Elden Ring Performance Tweaks v1.0 Initialized ===\n");
             
             std::thread::spawn(|| {
                 // Apply optimizations in a background thread

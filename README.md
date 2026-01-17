@@ -38,7 +38,7 @@ A lightweight, high-performance enhancement DLL designed to eliminate stutters a
 2. **Setup**:
     - Download `elden_ring_performance_tweaks.dll` and `er_performance_tweaks_config.ini`.
     - Place both files into your `ELDEN RING\Game\mods` directory.
-3. **Verify**: Check `er_performance_tweaks.log` in the game folder after launch to confirm optimizations were applied.
+3. **Verify**: Check `er_performance_tweaks_log.log` in the game folder after launch to confirm optimizations were applied.
 
 ---
 
@@ -72,7 +72,7 @@ A lightweight, high-performance enhancement DLL designed to eliminate stutters a
 2. **Настройка**:
     - Скачайте `elden_ring_performance_tweaks.dll` и `er_performance_tweaks_config.ini`.
     - Поместите оба файла в папку `ELDEN RING\Game\mods`.
-3. **Проверка**: После запуска игры проверьте файл `er_performance_tweaks.log` для подтверждения работы твиков.
+3. **Проверка**: После запуска игры проверьте файл `er_performance_tweaks_log.log` для подтверждения работы твиков.
 
 ---
 
