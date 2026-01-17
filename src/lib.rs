@@ -11,6 +11,9 @@ use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows_sys::Win32::System::Diagnostics::Debug::{
     SetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
+use windows_sys::Win32::System::Memory::SetProcessWorkingSetSizeEx;
+
 fn get_dll_dir() -> std::path::PathBuf {
     use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
     let mut buffer = [0u16; 32768];
