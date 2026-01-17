@@ -2,8 +2,6 @@
 *.log
 *.pdb
 *.exe
-*.dll
-/release
 .idea
 .vscode
 .gemini
