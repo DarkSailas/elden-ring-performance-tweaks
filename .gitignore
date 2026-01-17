@@ -1,0 +1,11 @@
+/target
+*.log
+*.pdb
+*.exe
+*.dll
+/release
+.idea
+.vscode
+.gemini
+brain
+*.bak
