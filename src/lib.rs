@@ -1,7 +1,8 @@
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::PathBuf;
 use windows_sys::Win32::Foundation::{HINSTANCE, BOOL};
-use windows_sys::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
+use windows_sys::Win32::System::LibraryLoader::{DisableThreadLibraryCalls, GetModuleFileNameW};
 use windows_sys::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 use windows_sys::Win32::System::Threading::{
     SetPriorityClass, GetCurrentProcess, ABOVE_NORMAL_PRIORITY_CLASS, SetProcessAffinityMask,
@@ -11,27 +12,67 @@ use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 use windows_sys::Win32::System::Diagnostics::Debug::{
     SetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX
 };
+use windows_sys::Win32::System::Memory::{
+    SetProcessWorkingSetSizeEx, GlobalMemoryStatusEx, MEMORYSTATUSEX,
+    QUOTA_LIMITS_HARDWS_MIN_DISABLE, QUOTA_LIMITS_HARDWS_MAX_DISABLE
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
-use windows_sys::Win32::System::Memory::SetProcessWorkingSetSizeEx;
 
-fn get_dll_dir() -> std::path::PathBuf {
-    use windows_sys::Win32::System::LibraryLoader::GetModuleFileNameW;
-    let mut buffer = [0u16; 32768];
+static mut G_DLL_INSTANCE: HINSTANCE = 0;
+
+fn get_dll_dir() -> PathBuf {
     unsafe {
-        let len = GetModuleFileNameW(0, buffer.as_mut_ptr(), buffer.len() as u32);
-        if len == 0 {
-            return std::path::PathBuf::new();
+        let mut buffer = [0u16; 32768];
+        // Use our actual DLL instance instead of 0 (which returns the main game .exe directory)
+        let len = GetModuleFileNameW(G_DLL_INSTANCE, buffer.as_mut_ptr(), buffer.len() as u32);
+        if len > 0 {
+            let s = String::from_utf16_lossy(&buffer[..len as usize]);
+            let mut path = PathBuf::from(s);
+            path.pop();
+            return path;
         }
-        let s = String::from_utf16_lossy(&buffer[..len as usize]);
-        let mut path = std::path::PathBuf::from(s);
-        path.pop();
-        path
     }
+    PathBuf::new()
+}
+
+fn get_exe_dir() -> PathBuf {
+    unsafe {
+        let mut buffer = [0u16; 32768];
+        let len = GetModuleFileNameW(0, buffer.as_mut_ptr(), buffer.len() as u32);
+        if len > 0 {
+            let s = String::from_utf16_lossy(&buffer[..len as usize]);
+            let mut path = PathBuf::from(s);
+            path.pop();
+            return path;
+        }
+    }
+    PathBuf::new()
+}
+
+fn find_config_path() -> PathBuf {
+    // 1. Try DLL directory first (mod\dll\er_performance_tweaks_config.ini)
+    let mut p = get_dll_dir();
+    p.push("er_performance_tweaks_config.ini");
+    if p.exists() {
+        return p;
+    }
+
+    // 2. Try Game exe directory as fallback
+    let mut p2 = get_exe_dir();
+    p2.push("er_performance_tweaks_config.ini");
+    if p2.exists() {
+        return p2;
+    }
+
+    p
 }
 
 // Simple logging system / Простая система логирования
 fn log(msg: &str) {
     let mut path = get_dll_dir();
+    if !path.exists() {
+        path = get_exe_dir();
+    }
     path.push("er_performance_tweaks_log.log");
     if let Ok(mut f) = OpenOptions::new()
         .append(true)
@@ -58,46 +99,45 @@ extern "system" {}
 #[link(name = "user32")]
 extern "system" {}
 
-struct Config {
-    enable_logging: bool,
-    init_delay: u64,
-    smart_wait: bool,
-    priority_level: u32,
-    bypass_core0: bool,
-    prefer_pcores: bool,
-    high_precision_timer: bool,
-    mmcss_profile: String,
-    window_title: String,
-    optimize_working_set: bool,
-    disable_throttling: bool,
-    prevent_sleep: bool,
+pub struct Config {
+    pub enable_logging: bool,
+    pub init_delay: u64,
+    pub smart_wait: bool,
+    pub priority_level: u32,
+    pub bypass_core0: bool,
+    pub prefer_pcores: bool,
+    pub high_precision_timer: bool,
+    pub mmcss_profile: String,
+    pub window_title: String,
+    pub optimize_working_set: bool,
+    pub disable_throttling: bool,
+    pub prevent_sleep: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            enable_logging: true,
+            enable_logging: false,
             init_delay: 3,
             smart_wait: true,
             priority_level: 1,
-            bypass_core0: true,
+            bypass_core0: false, // Default to FALSE: preserve Core 0 for game threads
             prefer_pcores: true,
             high_precision_timer: true,
-            mmcss_profile: "Pro Audio".to_string(),
+            mmcss_profile: "Games".to_string(),
             window_title: String::new(),
-            optimize_working_set: true,
+            optimize_working_set: false, // Default to FALSE to prevent 2GB hard swapping
             disable_throttling: true,
             prevent_sleep: true,
         }
     }
 }
 
-fn load_config() -> Config {
+pub fn load_config() -> Config {
     let mut config = Config::default();
-    let mut path = get_dll_dir();
-    path.push("er_performance_tweaks_config.ini");
+    let config_path = find_config_path();
     
-    if let Ok(content) = std::fs::read_to_string(path) {
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
         for line in content.lines() {
             let line = line.split(';').next().unwrap_or("").trim();
             if line.is_empty() || !line.contains('=') { continue; }
@@ -158,9 +198,6 @@ fn wait_for_game_window(custom_title: &str) {
 /// Main entry point for optimizations / Основная точка входа для оптимизаций
 unsafe fn apply_optimizations() {
     let config = load_config();
-    if !config.enable_logging {
-        // Disable logging by overwriting the file with nothing or just not logging
-    }
 
     if config.smart_wait {
         log("Waiting for game window...");
@@ -170,7 +207,7 @@ unsafe fn apply_optimizations() {
         std::thread::sleep(std::time::Duration::from_secs(config.init_delay));
     }
 
-    log("Initializing performance adjustments v1.0...");
+    log("Initializing performance adjustments v1.1...");
     let process = GetCurrentProcess();
 
     // 0. Stability: Suppress critical error dialogs / Скрытие диалогов критических ошибок
@@ -204,47 +241,59 @@ unsafe fn apply_optimizations() {
         log(" - CPU Priority: Failed to set");
     }
     
-    // 3. Smart Affinity & Intel Hybrid Support / Умное распределение по ядрам
-    use windows_sys::Win32::System::SystemInformation::{GetSystemInfo, SYSTEM_INFO};
-    let mut sys_info: SYSTEM_INFO = std::mem::zeroed();
-    GetSystemInfo(&mut sys_info);
-    
-    if sys_info.dwNumberOfProcessors > 1 {
-        let mut mask: usize = !0; // All cores
-        if config.bypass_core0 {
-            mask &= !1; // Skip core 0
-            log(" - Scheduling: Affinity (BypassCore0=true, Masking Core 0)");
-        } else {
-            log(" - Scheduling: Affinity (BypassCore0=false, Using all cores)");
-        }
+    // 3. Smart Affinity & Thread Scheduling
+    // When bypass_core0 is false, we DO NOT call SetProcessAffinityMask, preserving OS Thread Director & P/E-core mapping!
+    if config.bypass_core0 {
+        use windows_sys::Win32::System::SystemInformation::{GetSystemInfo, SYSTEM_INFO};
+        let mut sys_info: SYSTEM_INFO = std::mem::zeroed();
+        GetSystemInfo(&mut sys_info);
         
-        SetProcessAffinityMask(process, mask as usize);
-        log(&format!(" - Scheduling: Mask applied ({:X}) for {} cores", mask, sys_info.dwNumberOfProcessors));
+        if sys_info.dwNumberOfProcessors > 1 {
+            let mask: usize = (!0usize) & (!1usize); // Skip Core 0
+            SetProcessAffinityMask(process, mask);
+            log(&format!(" - Scheduling: Affinity (BypassCore0=true, Mask applied: {:X})", mask));
+        }
     } else {
-        log(" - Scheduling: Single core detected, affinity skipped");
+        log(" - Scheduling: OS Managed (All CPU cores & Thread Director preserved)");
     }
 
-    // 4. Memory Priority & Working Set / Оптимизация памяти
+    // 4. Memory Priority & Dynamic Working Set Expansion (Zero Hard-Caps!)
     #[repr(C)]
     struct MEMORY_PRIORITY_INFORMATION {
-        memory_priority: u32
+        memory_priority: u32,
     }
     let mem_info = MEMORY_PRIORITY_INFORMATION { memory_priority: 7 };
     SetProcessInformation(
         process,
-        0, // ProcessMemoryPriority
+        0, // ProcessMemoryPriority (Highest)
         &mem_info as *const _ as *const std::ffi::c_void,
-        std::mem::size_of::<MEMORY_PRIORITY_INFORMATION>() as u32
+        std::mem::size_of::<MEMORY_PRIORITY_INFORMATION>() as u32,
     );
 
     if config.optimize_working_set {
         let h_proc = GetCurrentProcess();
-        // Trying to increase working set size to avoid swapping
-        // QUOTA_LIMITS_HARDWS_MIN_DISABLE | QUOTA_LIMITS_HARDWS_MAX_DISABLE = 0
-        if SetProcessWorkingSetSizeEx(h_proc, 512 * 1024 * 1024, 2048 * 1024 * 1024, 0) != 0 {
-            log(" - Memory: Working set optimized (expanded to 512MB-2GB)");
-        } else {
-            log(" - Memory: Working set expansion failed");
+        let mut mem_status: MEMORYSTATUSEX = std::mem::zeroed();
+        mem_status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+
+        if GlobalMemoryStatusEx(&mut mem_status) != 0 {
+            let total_ram = mem_status.ullTotalPhys;
+            // Dynamically scale minimum working set: 4GB on 16GB+ systems, 2GB on 8GB systems
+            let min_ws: usize = if total_ram >= 16 * 1024 * 1024 * 1024 {
+                4 * 1024 * 1024 * 1024
+            } else if total_ram >= 8 * 1024 * 1024 * 1024 {
+                2 * 1024 * 1024 * 1024
+            } else {
+                1024 * 1024 * 1024
+            };
+
+            // CRITICAL: QUOTA_LIMITS_HARDWS_MIN_DISABLE | QUOTA_LIMITS_HARDWS_MAX_DISABLE = 12
+            // Setting Flags = 12 disables hard page quota limits, allowing Elden Ring to consume 6-10GB without disk swapping!
+            let flags = QUOTA_LIMITS_HARDWS_MIN_DISABLE | QUOTA_LIMITS_HARDWS_MAX_DISABLE;
+            if SetProcessWorkingSetSizeEx(h_proc, min_ws, usize::MAX, flags) != 0 {
+                log(&format!(" - Memory: Dynamic working set expanded (min {} MB, soft max unlimited)", min_ws / (1024 * 1024)));
+            } else {
+                log(" - Memory: Dynamic working set expansion failed");
+            }
         }
     } else {
         log(" - Memory: Working set optimization (Disabled in config)");
@@ -256,18 +305,18 @@ unsafe fn apply_optimizations() {
         struct PROCESS_POWER_THROTTLING_STATE {
             version: u32,
             control_mask: u32,
-            state_mask: u32
+            state_mask: u32,
         }
         let power_info = PROCESS_POWER_THROTTLING_STATE {
             version: 1,
             control_mask: 1, // PROCESS_POWER_THROTTLING_EXECUTION_SPEED
-            state_mask: 0    // Disable throttling
+            state_mask: 0,   // Disable throttling
         };
         SetProcessInformation(
             process,
             4, // ProcessPowerThrottling
             &power_info as *const _ as *const std::ffi::c_void,
-            std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32
+            std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
         );
         log(" - Power: Throttling (Disabled)");
     } else {
@@ -277,16 +326,16 @@ unsafe fn apply_optimizations() {
     // 6. I/O Priority (High)
     #[repr(C)]
     struct IO_PRIORITY_HINT {
-        priority_hint: u32
+        priority_hint: u32,
     }
     let io_info = IO_PRIORITY_HINT {
-        priority_hint: 3
-    }; // IoPriorityHigh
+        priority_hint: 3, // IoPriorityHigh
+    };
     SetProcessInformation(
         process,
         1, // ProcessIoPriority
         &io_info as *const _ as *const std::ffi::c_void,
-        std::mem::size_of::<IO_PRIORITY_HINT>() as u32
+        std::mem::size_of::<IO_PRIORITY_HINT>() as u32,
     );
     log(" - I/O: Priority set to High (Auto)");
 
@@ -299,7 +348,7 @@ unsafe fn apply_optimizations() {
         log(" - Power: Sleep/Idle prevention (Disabled)");
     }
 
-    // 8. MMCSS (Multimedia Class Scheduler Service) / Регистрация в MMCSS
+    // 8. MMCSS (Multimedia Class Scheduler Service)
     let task_name: Vec<u16> = format!("{}\0", config.mmcss_profile).encode_utf16().collect();
     let mut task_index: u32 = 0;
     let mmcss_handle = AvSetMmThreadCharacteristicsW(task_name.as_ptr(), &mut task_index);
@@ -324,14 +373,18 @@ unsafe fn apply_optimizations() {
 pub unsafe extern "system" fn DllMain(instance: HINSTANCE, call_reason: u32, _: *mut std::ffi::c_void) -> BOOL {
     match call_reason {
         DLL_PROCESS_ATTACH => {
+            G_DLL_INSTANCE = instance;
             let _ = DisableThreadLibraryCalls(instance);
-            // Truncate log file on start / Перезапись лога при запуске
+            
+            // Truncate log file on start
             let mut path = get_dll_dir();
+            if !path.exists() {
+                path = get_exe_dir();
+            }
             path.push("er_performance_tweaks_log.log");
-            let _ = std::fs::write(path, "=== Elden Ring Performance Tweaks v1.0 Initialized ===\n");
+            let _ = std::fs::write(path, "=== Elden Ring Performance Tweaks v1.1 Initialized ===\n");
             
             std::thread::spawn(|| {
-                // Apply optimizations in a background thread
                 apply_optimizations();
             });
         }

@@ -1,6 +1,6 @@
 # 🐉 Elden Ring Performance Tweaks
 
-![Version](https://img.shields.io/badge/version-1.0.0-gold?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-1.1.0-gold?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 
@@ -18,14 +18,14 @@ A lightweight, high-performance enhancement DLL designed to eliminate stutters a
 > **This tool is for WINDOWS ONLY.** It relies on low-level Windows APIs for memory and CPU scheduling.
 
 ### ✨ Key Features
-- ⚙️ **External Configuration**: Full control via `er_performance_tweaks_config.ini`.
+- ⚙️ **Dual Path Config Resolution**: Automatically detects `er_performance_tweaks_config.ini` in both the mod DLL directory and the main game directory.
 - 🧠 **Smart Initialization**: Automatically waits (~40s timeout) for the game window to stabilize.
 - ⏱️ **Zero-Latency Timer**: Forces **0.5ms** system timer resolution via Native `ntdll` API.
 - 🧵 **Smart Core Scheduling**: 
-    - Intelligent **Core 0 Bypass** to reduce OS-related micro-stutters.
-    - Automatic **Affinity Masking** based on your CPU thread count.
-- 🚀 **MMCSS Integration**: Registers game threads in the *Multimedia Class Scheduler Service* (Pro Audio/Games).
-- 💾 **Memory Optimization**: Expands the process **Working Set** (512MB-2GB) to minimize I/O paging.
+    - Intelligent **Thread Director Preservation**: keeps all physical P-cores & E-cores active by default.
+    - Optional **Core 0 Bypass** with automatic affinity masking for legacy setups.
+- 🚀 **MMCSS Integration**: Registers game threads in the *Multimedia Class Scheduler Service* (`Games` / `Pro Audio`).
+- 💾 **Dynamic Working Set Expansion**: Dynamically expands memory soft working set without 2GB hard swapping limits.
 - ⚡ **Power Management**: Disables **Power Throttling** and prevents system sleep during gameplay.
 
 ### 🛡️ Anti-Cheat & Safety
@@ -52,14 +52,14 @@ A lightweight, high-performance enhancement DLL designed to eliminate stutters a
 > **Только для WINDOWS.** Мод использует низкоуровневые системные API Windows для управления памятью и планировщиком задач.
 
 ### ✨ Основные возможности
-- ⚙️ **Полная настройка**: Управление всеми параметрами через `er_performance_tweaks_config.ini`.
+- ⚙️ **Двойной поиск конфигурации**: Автоматическое чтение `er_performance_tweaks_config.ini` как рядом с DLL в папке модов, так и в каталоге игры.
 - 🧠 **Умный запуск**: Автоматическое ожидание окна игры (таймаут 40с) для стабильной инициализации.
 - ⏱️ **Таймер с нулевой задержкой**: Принудительная установка разрешения таймера **0.5мс** через Native API.
 - 🧵 **Умное распределение ядер**: 
-    - Пропуск **Ядра 0** для исключения влияния системных прерываний.
-    - Автоматическая маска аффинити под ваше количество потоков.
-- 🚀 **Интеграция MMCSS**: Регистрация потоков в системном планировщике мультимедиа (Pro Audio).
-- 💾 **Оптимизация памяти**: Расширение **рабочего набора** (512МБ-2ГБ) для минимизации подгрузок с диска.
+    - Сохранение нативной работы **Intel Thread Director** и всех ядер по умолчанию.
+    - Опциональный пропуск **Ядра 0** с автоматической маской аффинити для совместимости.
+- 🚀 **Интеграция MMCSS**: Регистрация потоков в системном планировщике мультимедиа (`Games` / `Pro Audio`).
+- 💾 **Динамическое расширение памяти**: Мягкое расширение рабочего набора (Working Set) без жесткого лимита в 2 ГБ и без сброса в файл подкачки.
 - ⚡ **Управление питанием**: Отключение **Power Throttling** и блокировка спящего режима во время игры.
 
 ### 🛡️ Античит и Безопасность
