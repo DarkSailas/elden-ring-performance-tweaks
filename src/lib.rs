@@ -13,9 +13,10 @@ use windows_sys::Win32::System::Diagnostics::Debug::{
     SetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX
 };
 use windows_sys::Win32::System::Memory::{
-    SetProcessWorkingSetSizeEx, GlobalMemoryStatusEx, MEMORYSTATUSEX,
+    SetProcessWorkingSetSizeEx,
     QUOTA_LIMITS_HARDWS_MIN_DISABLE, QUOTA_LIMITS_HARDWS_MAX_DISABLE
 };
+use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
 
 static mut G_DLL_INSTANCE: HINSTANCE = 0;
