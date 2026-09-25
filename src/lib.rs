@@ -17,14 +17,16 @@ use windows_sys::Win32::System::Memory::{
     QUOTA_LIMITS_HARDWS_MIN_DISABLE, QUOTA_LIMITS_HARDWS_MAX_DISABLE
 };
 use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+use std::sync::OnceLock;
 use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
 
 static mut G_DLL_INSTANCE: HINSTANCE = 0;
+static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+static CONFIG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 fn get_dll_dir() -> PathBuf {
     unsafe {
-        let mut buffer = [0u16; 32768];
-        // Use our actual DLL instance instead of 0 (which returns the main game .exe directory)
+        let mut buffer = vec![0u16; 1024];
         let len = GetModuleFileNameW(G_DLL_INSTANCE, buffer.as_mut_ptr(), buffer.len() as u32);
         if len > 0 {
             let s = String::from_utf16_lossy(&buffer[..len as usize]);
@@ -38,7 +40,7 @@ fn get_dll_dir() -> PathBuf {
 
 fn get_exe_dir() -> PathBuf {
     unsafe {
-        let mut buffer = [0u16; 32768];
+        let mut buffer = vec![0u16; 1024];
         let len = GetModuleFileNameW(0, buffer.as_mut_ptr(), buffer.len() as u32);
         if len > 0 {
             let s = String::from_utf16_lossy(&buffer[..len as usize]);
@@ -51,30 +53,39 @@ fn get_exe_dir() -> PathBuf {
 }
 
 fn find_config_path() -> PathBuf {
-    // 1. Try DLL directory first (mod\dll\er_performance_tweaks_config.ini)
-    let mut p = get_dll_dir();
-    p.push("er_performance_tweaks_config.ini");
-    if p.exists() {
-        return p;
-    }
+    CONFIG_PATH.get_or_init(|| {
+        // 1. Try DLL directory first (mod\dll\er_performance_tweaks_config.ini)
+        let mut p = get_dll_dir();
+        p.push("er_performance_tweaks_config.ini");
+        if p.exists() {
+            return p;
+        }
 
-    // 2. Try Game exe directory as fallback
-    let mut p2 = get_exe_dir();
-    p2.push("er_performance_tweaks_config.ini");
-    if p2.exists() {
-        return p2;
-    }
+        // 2. Try Game exe directory as fallback
+        let mut p2 = get_exe_dir();
+        p2.push("er_performance_tweaks_config.ini");
+        if p2.exists() {
+            return p2;
+        }
 
-    p
+        p
+    }).clone()
+}
+
+fn get_log_path() -> &'static PathBuf {
+    LOG_PATH.get_or_init(|| {
+        let mut path = get_dll_dir();
+        if !path.exists() {
+            path = get_exe_dir();
+        }
+        path.push("er_performance_tweaks_log.log");
+        path
+    })
 }
 
 // Simple logging system / Простая система логирования
 fn log(msg: &str) {
-    let mut path = get_dll_dir();
-    if !path.exists() {
-        path = get_exe_dir();
-    }
-    path.push("er_performance_tweaks_log.log");
+    let path = get_log_path();
     if let Ok(mut f) = OpenOptions::new()
         .append(true)
         .create(true)
@@ -378,16 +389,15 @@ pub unsafe extern "system" fn DllMain(instance: HINSTANCE, call_reason: u32, _: 
             let _ = DisableThreadLibraryCalls(instance);
             
             // Truncate log file on start
-            let mut path = get_dll_dir();
-            if !path.exists() {
-                path = get_exe_dir();
-            }
-            path.push("er_performance_tweaks_log.log");
-            let _ = std::fs::write(path, "=== Elden Ring Performance Tweaks v1.1 Initialized ===\n");
+            let log_file = get_log_path();
+            let _ = std::fs::write(log_file, "=== Elden Ring Performance Tweaks v1.1.0 Initialized ===\n");
             
-            std::thread::spawn(|| {
-                apply_optimizations();
-            });
+            let _ = std::thread::Builder::new()
+                .name("er-perf-tweaks".to_string())
+                .stack_size(2 * 1024 * 1024)
+                .spawn(|| {
+                    apply_optimizations();
+                });
         }
         DLL_PROCESS_DETACH => {
             timeEndPeriod(1);
