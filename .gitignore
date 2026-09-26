@@ -1,0 +1,9 @@
+/target
+*.log
+*.pdb
+*.exe
+.idea
+.vscode
+.gemini
+brain
+*.bak
